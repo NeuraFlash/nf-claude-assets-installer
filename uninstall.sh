@@ -7,7 +7,49 @@
 
 set -euo pipefail
 
-REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "$0")" && pwd)}"
+# ---- Bootstrap (curl-pipe uninstall) ----------------------------------------
+#
+# Same pattern as install.sh — if run standalone without the payload around
+# us, fetch the latest published tarball and re-run from there. We need the
+# payload because uninstall.sh enumerates skills/agents/commands from the
+# source to know what to remove from ~/.claude/.
+
+MIRROR_REPO="${NF_MIRROR_REPO:-neuraflash/nf-claude-assets-installer}"
+MIRROR_TARBALL_URL="${NF_MIRROR_TARBALL_URL:-https://github.com/${MIRROR_REPO}/raw/main/latest.tar.gz}"
+
+bootstrap() {
+  command -v curl >/dev/null 2>&1 || { printf '[nf-assets] curl is required.\n' >&2; exit 1; }
+  command -v tar  >/dev/null 2>&1 || { printf '[nf-assets] tar is required.\n' >&2; exit 1; }
+
+  local tmp; tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' EXIT INT TERM
+
+  printf '[nf-assets] Fetching uninstall payload from %s\n' "$MIRROR_TARBALL_URL"
+  if ! curl -fsSL "$MIRROR_TARBALL_URL" -o "$tmp/payload.tar.gz"; then
+    printf '[nf-assets] Failed to fetch payload tarball.\n' >&2
+    exit 1
+  fi
+
+  mkdir -p "$tmp/payload"
+  tar -xzf "$tmp/payload.tar.gz" -C "$tmp/payload"
+  [ -f "$tmp/payload/uninstall.sh" ] || { printf '[nf-assets] Tarball missing uninstall.sh\n' >&2; exit 1; }
+
+  local rc=0
+  bash "$tmp/payload/uninstall.sh" "$@" || rc=$?
+  exit "$rc"
+}
+
+NF_SELF="${BASH_SOURCE[0]:-$0}"
+NF_SELF_DIR=""
+if [ -f "$NF_SELF" ]; then
+  NF_SELF_DIR="$(cd "$(dirname "$NF_SELF")" 2>/dev/null && pwd || true)"
+fi
+
+if [ -z "${REPO_ROOT:-}" ] && { [ -z "$NF_SELF_DIR" ] || [ ! -f "$NF_SELF_DIR/mcp/servers.json" ]; }; then
+  bootstrap "$@"
+fi
+
+REPO_ROOT="${REPO_ROOT:-$NF_SELF_DIR}"
 
 CLAUDE_HOME="$HOME/.claude"
 CLAUDE_SKILLS="$CLAUDE_HOME/skills"

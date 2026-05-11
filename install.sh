@@ -15,20 +15,61 @@
 # Telemetry MCP is NOT installed here — run nf-telemetry-installer separately
 # (see https://github.com/neuraflash/nf-telemetry-installer).
 #
-# Usage (from the repo root):
+# Usage:
+#   # From a clone of the source repo or the public mirror:
 #   bash install.sh
 #
-# Or from the public mirror:
-#   curl -fsSL https://raw.githubusercontent.com/neuraflash/nf-claude-assets-installer/main/install.sh | bash
+#   # Direct, no clone (recommended for end users):
+#   bash <(curl -fsSL https://raw.githubusercontent.com/neuraflash/nf-claude-assets-installer/main/install.sh)
 
 set -euo pipefail
 
+# ---- Bootstrap (curl-pipe install) ------------------------------------------
+#
+# When install.sh is run standalone — curl-piped or copied somewhere without
+# the rest of the payload — fetch the latest published tarball into a temp
+# dir and run install.sh from there. Local clones (payload sitting as
+# siblings) skip the bootstrap.
+
+MIRROR_REPO="${NF_MIRROR_REPO:-neuraflash/nf-claude-assets-installer}"
+MIRROR_TARBALL_URL="${NF_MIRROR_TARBALL_URL:-https://github.com/${MIRROR_REPO}/raw/main/latest.tar.gz}"
+
+bootstrap() {
+  command -v curl >/dev/null 2>&1 || { printf '[nf-assets] curl is required.\n' >&2; exit 1; }
+  command -v tar  >/dev/null 2>&1 || { printf '[nf-assets] tar is required.\n' >&2; exit 1; }
+
+  local tmp; tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' EXIT INT TERM
+
+  printf '[nf-assets] Fetching install payload from %s\n' "$MIRROR_TARBALL_URL"
+  if ! curl -fsSL "$MIRROR_TARBALL_URL" -o "$tmp/payload.tar.gz"; then
+    printf '[nf-assets] Failed to fetch payload tarball.\n' >&2
+    exit 1
+  fi
+
+  mkdir -p "$tmp/payload"
+  tar -xzf "$tmp/payload.tar.gz" -C "$tmp/payload"
+  [ -f "$tmp/payload/install.sh" ] || { printf '[nf-assets] Tarball missing install.sh\n' >&2; exit 1; }
+
+  local rc=0
+  bash "$tmp/payload/install.sh" "$@" || rc=$?
+  exit "$rc"
+}
+
+NF_SELF="${BASH_SOURCE[0]:-$0}"
+NF_SELF_DIR=""
+if [ -f "$NF_SELF" ]; then
+  NF_SELF_DIR="$(cd "$(dirname "$NF_SELF")" 2>/dev/null && pwd || true)"
+fi
+
+# Bootstrap unless REPO_ROOT was explicitly set OR the payload is next to us.
+if [ -z "${REPO_ROOT:-}" ] && { [ -z "$NF_SELF_DIR" ] || [ ! -f "$NF_SELF_DIR/mcp/servers.json" ]; }; then
+  bootstrap "$@"
+fi
+
 # ---- Paths ------------------------------------------------------------------
 
-# If run from a clone, $REPO_ROOT is this repo. If run via curl-pipe, the
-# public mirror will inline the payload into a tarball that gets unpacked
-# into $TMP_REPO and REPO_ROOT points there. Both paths converge below.
-REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "$0")" && pwd)}"
+REPO_ROOT="${REPO_ROOT:-$NF_SELF_DIR}"
 
 CLAUDE_HOME="$HOME/.claude"
 CLAUDE_SKILLS="$CLAUDE_HOME/skills"
