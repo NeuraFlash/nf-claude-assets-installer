@@ -1,0 +1,46 @@
+{
+  "$comment": "Canonical MCP entries installed by install.sh. The telemetry MCP is intentionally NOT listed here — it has its own installer at neuraflash/nf-telemetry-installer that users must run separately. Add general-purpose MCPs (context7, gdrive, lucid, atlassian, salesforce-dx, etc.) here. All entries are stdio; remote HTTP MCPs are wrapped via the mcp-remote proxy so the installer stays transport-agnostic.",
+  "servers": {
+    "context7": {
+      "description": "Up-to-date library / framework / API docs (Upstash).",
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"],
+      "scope": "user",
+      "surfaces": ["claude_code", "claude_desktop"]
+    },
+    "gdrive": {
+      "description": "Google Drive — list, search, read files. First-time setup: run `npx -y @modelcontextprotocol/server-gdrive auth` to OAuth-authorize, then set GDRIVE_CREDENTIALS_PATH if the default location isn't used.",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-gdrive"],
+      "scope": "user",
+      "surfaces": ["claude_code", "claude_desktop"]
+    },
+    "lucid": {
+      "description": "Lucidchart / Lucidspark — search docs, read items, create diagrams. OAuth handled by mcp-remote on first connect (browser pops open).",
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://mcp.lucid.app/mcp"],
+      "scope": "user",
+      "surfaces": ["claude_code", "claude_desktop"]
+    },
+    "atlassian": {
+      "description": "Atlassian Remote MCP — Jira + Confluence. OAuth handled by mcp-remote on first connect (browser pops open).",
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://mcp.atlassian.com/v1/mcp"],
+      "scope": "user",
+      "surfaces": ["claude_code", "claude_desktop"]
+    },
+    "salesforce-dx": {
+      "description": "Salesforce DX MCP — orgs, metadata, data, users, testing, devops. Requires the `sf` CLI installed and at least one authorized org (`sf org login web`). Uses DEFAULT_TARGET_ORG by default.",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@salesforce/mcp",
+        "--orgs", "DEFAULT_TARGET_ORG",
+        "--toolsets", "all",
+        "--allow-non-ga-tools"
+      ],
+      "scope": "user",
+      "surfaces": ["claude_code", "claude_desktop"]
+    }
+  }
+}

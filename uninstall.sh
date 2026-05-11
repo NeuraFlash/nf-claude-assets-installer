@@ -1,0 +1,113 @@
+#!/usr/bin/env bash
+#
+# uninstall.sh
+#
+# Removes everything install.sh added. Does NOT touch the telemetry MCP —
+# that has its own uninstaller at nf-telemetry-installer.
+
+set -euo pipefail
+
+REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "$0")" && pwd)}"
+
+CLAUDE_HOME="$HOME/.claude"
+CLAUDE_SKILLS="$CLAUDE_HOME/skills"
+CLAUDE_AGENTS="$CLAUDE_HOME/agents"
+CLAUDE_COMMANDS="$CLAUDE_HOME/commands"
+CLAUDE_MD="$CLAUDE_HOME/CLAUDE.md"
+
+case "$(uname -s)" in
+  Darwin) DESKTOP_CFG="$HOME/Library/Application Support/Claude/claude_desktop_config.json" ;;
+  Linux)  DESKTOP_CFG="${XDG_CONFIG_HOME:-$HOME/.config}/Claude/claude_desktop_config.json" ;;
+esac
+
+NF_BEGIN='<!-- BEGIN nf-claude-assets — do not edit, rewritten on every install -->'
+NF_END='<!-- END nf-claude-assets -->'
+
+log()  { printf '\033[1;34m[nf-assets]\033[0m %s\n' "$*"; }
+warn() { printf '\033[1;33m[nf-assets]\033[0m %s\n' "$*" >&2; }
+
+# Remove skills/agents/commands that this repo defines.
+remove_code_assets() {
+  for skill_dir in "$REPO_ROOT"/skills/*/; do
+    name="$(basename "$skill_dir")"
+    [ "$name" = "_template" ] && continue
+    rm -rf "$CLAUDE_SKILLS/$name" && log "  removed skill: $name" || true
+  done
+
+  for f in "$REPO_ROOT"/agents/*.md; do
+    [ -e "$f" ] || continue
+    name="$(basename "$f")"
+    [ "$name" = "_template.md" ] && continue
+    rm -f "$CLAUDE_AGENTS/$name" && log "  removed agent: $name" || true
+  done
+
+  for f in "$REPO_ROOT"/commands/*.md; do
+    [ -e "$f" ] || continue
+    name="$(basename "$f")"
+    [ "$name" = "_template.md" ] && continue
+    rm -f "$CLAUDE_COMMANDS/$name" && log "  removed command: $name" || true
+  done
+}
+
+# Strip the nf-claude-assets block from ~/.claude/CLAUDE.md, leave the rest.
+clean_claude_md() {
+  [ -f "$CLAUDE_MD" ] || return 0
+  grep -qF "$NF_BEGIN" "$CLAUDE_MD" || return 0
+  local tmp; tmp="$(mktemp)"
+  awk -v begin="$NF_BEGIN" -v end="$NF_END" '
+    $0 == begin { skipping = 1; next }
+    $0 == end   { skipping = 0; next }
+    !skipping   { print }
+  ' "$CLAUDE_MD" > "$tmp"
+  mv "$tmp" "$CLAUDE_MD"
+  log "  stripped nf-claude-assets block from $CLAUDE_MD"
+}
+
+# Remove MCP entries defined in mcp/servers.json (both surfaces).
+remove_mcp_servers() {
+  local servers_json="$REPO_ROOT/mcp/servers.json"
+  [ -f "$servers_json" ] || return 0
+  command -v node >/dev/null 2>&1 || return 0
+
+  if command -v claude >/dev/null 2>&1; then
+    node -e '
+      const fs = require("fs");
+      const cfg = JSON.parse(fs.readFileSync(process.env.SERVERS, "utf8"));
+      process.stdout.write(JSON.stringify(Object.keys(cfg.servers || {})));
+    ' SERVERS="$servers_json" | python3 -c '
+import json, subprocess, sys
+for name in json.loads(sys.stdin.read()):
+    subprocess.run(["claude", "mcp", "remove", name, "--scope", "user"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    print(f"[nf-assets]   removed code mcp: {name}")
+'
+  fi
+
+  if [ -n "${DESKTOP_CFG:-}" ] && [ -f "$DESKTOP_CFG" ]; then
+    local tmp; tmp="$(mktemp)"
+    SERVERS="$servers_json" CFG="$DESKTOP_CFG" OUT="$tmp" node -e '
+      const fs = require("fs");
+      const src = JSON.parse(fs.readFileSync(process.env.SERVERS, "utf8"));
+      const cfg = JSON.parse(fs.readFileSync(process.env.CFG, "utf8") || "{}");
+      cfg.mcpServers = cfg.mcpServers || {};
+      for (const name of Object.keys(src.servers || {})) {
+        if (cfg.mcpServers[name]) {
+          delete cfg.mcpServers[name];
+          console.error(`[nf-assets]   removed desktop mcp: ${name}`);
+        }
+      }
+      fs.writeFileSync(process.env.OUT, JSON.stringify(cfg, null, 2) + "\n");
+    '
+    mv "$tmp" "$DESKTOP_CFG"
+  fi
+}
+
+main() {
+  log "Removing nf-claude-assets from this machine"
+  remove_code_assets
+  clean_claude_md
+  remove_mcp_servers
+  log "done."
+}
+
+main "$@"
