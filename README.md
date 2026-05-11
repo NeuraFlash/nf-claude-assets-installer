@@ -1,0 +1,1 @@
+# nf-claude-assets-installer
