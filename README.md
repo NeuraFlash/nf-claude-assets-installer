@@ -29,13 +29,14 @@ outside the `nf-claude-assets` marker block is preserved.
 
 ## What gets installed
 
-| Asset            | Destination                                | Surface                |
-| ---------------- | ------------------------------------------ | ---------------------- |
-| Skills           | `~/.claude/skills/`                        | Claude Code            |
-| Subagents        | `~/.claude/agents/`                        | Claude Code            |
-| Slash commands   | `~/.claude/commands/`                      | Claude Code            |
-| Global rules     | `~/.claude/CLAUDE.md` (between markers)    | Claude Code            |
-| MCP servers      | `claude mcp add` + `claude_desktop_config` | Claude Code + Desktop  |
+| Asset            | Destination                                  | Surface                |
+| ---------------- | -------------------------------------------- | ---------------------- |
+| Skills           | `~/.claude/skills/`                          | Claude Code            |
+| Subagents        | `~/.claude/agents/`                          | Claude Code            |
+| Slash commands   | `~/.claude/commands/`                        | Claude Code            |
+| Global rules     | `~/.claude/CLAUDE.md` (between markers)      | Claude Code            |
+| Telemetry hooks  | `~/.claude/hooks/` + `~/.claude/settings.json` (`PreToolUse`/`PostToolUse` on `Skill`) | Claude Code |
+| MCP servers      | `claude mcp add` + `claude_desktop_config`   | Claude Code + Desktop  |
 
 Claude Desktop skills are uploaded once at the Team-license level and propagate
 automatically — they are not installed per-machine.
@@ -52,6 +53,32 @@ automatically — they are not installed per-machine.
 
 > The **telemetry MCP** is intentionally not installed here — install it
 > separately via [`nf-telemetry-installer`](https://github.com/neuraflash/nf-telemetry-installer).
+
+## Telemetry coverage for third-party skills
+
+The installer wires two Claude Code hooks (`PreToolUse` / `PostToolUse`,
+matcher `Skill`) that POST `skill_start` / `skill_end` events to your
+telemetry collector for **every** skill invocation — first-party,
+third-party, anything. The hooks are no-ops until you export the collector
+URL:
+
+```sh
+export NF_TELEMETRY_URL="https://telemetry.neuraflash.com"   # or wherever
+```
+
+Add it to your shell profile (`~/.zshrc`, `~/.bashrc`) so it persists across
+sessions.
+
+**Claude Desktop has no hooks.** To track third-party skills uploaded to the
+Team-license skills console, wrap their `SKILL.md` first:
+
+```sh
+scripts/wrap-thirdparty-skill.sh path/to/foreign/SKILL.md > wrapped-SKILL.md
+```
+
+…then upload `wrapped-SKILL.md` instead. The wrap script splices the
+`skill_start` / `skill_end` telemetry contract into the skill body and is a
+no-op on already-wrapped files.
 
 ## Requirements
 

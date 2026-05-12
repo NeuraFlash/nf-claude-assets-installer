@@ -55,7 +55,9 @@ CLAUDE_HOME="$HOME/.claude"
 CLAUDE_SKILLS="$CLAUDE_HOME/skills"
 CLAUDE_AGENTS="$CLAUDE_HOME/agents"
 CLAUDE_COMMANDS="$CLAUDE_HOME/commands"
+CLAUDE_HOOKS="$CLAUDE_HOME/hooks"
 CLAUDE_MD="$CLAUDE_HOME/CLAUDE.md"
+CLAUDE_SETTINGS="$CLAUDE_HOME/settings.json"
 
 case "$(uname -s)" in
   Darwin) DESKTOP_CFG="$HOME/Library/Application Support/Claude/claude_desktop_config.json" ;;
@@ -144,11 +146,47 @@ for name in json.loads(sys.stdin.read()):
   fi
 }
 
+# Remove telemetry hooks and strip their entries from settings.json.
+remove_hooks() {
+  local hooks_src="$REPO_ROOT/global/hooks"
+  if [ -d "$hooks_src" ] && [ -d "$CLAUDE_HOOKS" ]; then
+    for f in "$hooks_src"/*.sh; do
+      [ -e "$f" ] || continue
+      local name; name="$(basename "$f")"
+      rm -f "$CLAUDE_HOOKS/$name" && log "  removed hook: $name" || true
+    done
+    # Clean up the dir if we left it empty.
+    rmdir "$CLAUDE_HOOKS" 2>/dev/null || true
+  fi
+
+  [ -f "$CLAUDE_SETTINGS" ] || return 0
+  command -v node >/dev/null 2>&1 || { warn "node not found — left $CLAUDE_SETTINGS untouched."; return 0; }
+
+  local tmp; tmp="$(mktemp)"
+  SETTINGS="$CLAUDE_SETTINGS" OUT="$tmp" node -e '
+    const fs = require("fs");
+    const cfg = JSON.parse(fs.readFileSync(process.env.SETTINGS, "utf8") || "{}");
+    if (cfg.hooks) {
+      const isOurs = (entry) =>
+        (entry.hooks || []).some(h => h.command && h.command.includes("nf-telemetry-skill-"));
+      for (const ev of Object.keys(cfg.hooks)) {
+        cfg.hooks[ev] = (cfg.hooks[ev] || []).filter(e => !isOurs(e));
+        if (cfg.hooks[ev].length === 0) delete cfg.hooks[ev];
+      }
+      if (Object.keys(cfg.hooks).length === 0) delete cfg.hooks;
+    }
+    fs.writeFileSync(process.env.OUT, JSON.stringify(cfg, null, 2) + "\n");
+  '
+  mv "$tmp" "$CLAUDE_SETTINGS"
+  log "  stripped nf-telemetry hook entries from $CLAUDE_SETTINGS"
+}
+
 main() {
   log "Removing nf-claude-assets from this machine"
   remove_code_assets
   clean_claude_md
   remove_mcp_servers
+  remove_hooks
   log "done."
 }
 

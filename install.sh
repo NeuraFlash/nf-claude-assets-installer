@@ -75,7 +75,9 @@ CLAUDE_HOME="$HOME/.claude"
 CLAUDE_SKILLS="$CLAUDE_HOME/skills"
 CLAUDE_AGENTS="$CLAUDE_HOME/agents"
 CLAUDE_COMMANDS="$CLAUDE_HOME/commands"
+CLAUDE_HOOKS="$CLAUDE_HOME/hooks"
 CLAUDE_MD="$CLAUDE_HOME/CLAUDE.md"
+CLAUDE_SETTINGS="$CLAUDE_HOME/settings.json"
 
 case "$(uname -s)" in
   Darwin)
@@ -258,6 +260,60 @@ for entry in json.loads(sys.stdin.read()):
   fi
 }
 
+# ---- Telemetry hooks (Claude Code) -----------------------------------------
+#
+# Installs the PreToolUse / PostToolUse hooks that capture every Skill
+# invocation (including third-party skills that don't emit telemetry
+# themselves). Desktop has no equivalent hook system — for Desktop coverage
+# of third-party skills, use scripts/wrap-thirdparty-skill.sh before upload.
+
+install_hooks() {
+  command -v claude >/dev/null 2>&1 || return 0
+
+  local hooks_src="$REPO_ROOT/global/hooks"
+  [ -d "$hooks_src" ] || { log "No global/hooks/ — skipping hook install."; return 0; }
+
+  log "Installing telemetry hooks to $CLAUDE_HOOKS"
+  mkdir -p "$CLAUDE_HOOKS"
+  for f in "$hooks_src"/*.sh; do
+    [ -e "$f" ] || continue
+    local name; name="$(basename "$f")"
+    cp "$f" "$CLAUDE_HOOKS/$name"
+    chmod +x "$CLAUDE_HOOKS/$name"
+    log "  hook: $name"
+  done
+
+  if ! command -v node >/dev/null 2>&1; then
+    warn "node not found — hook scripts copied but $CLAUDE_SETTINGS not wired. Install Node 18+ and rerun."
+    return 0
+  fi
+
+  [ -f "$CLAUDE_SETTINGS" ] || echo '{}' > "$CLAUDE_SETTINGS"
+  local tmp; tmp="$(mktemp)"
+  SETTINGS="$CLAUDE_SETTINGS" HOOKS_DIR="$CLAUDE_HOOKS" OUT="$tmp" node -e '
+    const fs = require("fs");
+    const startCmd = `${process.env.HOOKS_DIR}/nf-telemetry-skill-start.sh`;
+    const endCmd   = `${process.env.HOOKS_DIR}/nf-telemetry-skill-end.sh`;
+    const cfg = JSON.parse(fs.readFileSync(process.env.SETTINGS, "utf8") || "{}");
+    cfg.hooks = cfg.hooks || {};
+
+    const isOurs = (entry) =>
+      (entry.hooks || []).some(h => h.command && h.command.includes("nf-telemetry-skill-"));
+
+    const upsert = (event, cmd) => {
+      cfg.hooks[event] = (cfg.hooks[event] || []).filter(e => !isOurs(e));
+      cfg.hooks[event].push({ matcher: "Skill", hooks: [{ type: "command", command: cmd }] });
+    };
+
+    upsert("PreToolUse",  startCmd);
+    upsert("PostToolUse", endCmd);
+
+    fs.writeFileSync(process.env.OUT, JSON.stringify(cfg, null, 2) + "\n");
+  '
+  mv "$tmp" "$CLAUDE_SETTINGS"
+  log "  hooks wired into $CLAUDE_SETTINGS (matcher: Skill)"
+}
+
 # ---- Main -------------------------------------------------------------------
 
 main() {
@@ -267,6 +323,7 @@ main() {
   install_code_assets
   merge_claude_md
   install_mcp_servers
+  install_hooks
 
   cat <<EOF
 
@@ -282,6 +339,9 @@ Next steps:
       - salesforce-dx: 'sf org login web' (Salesforce CLI must be installed)
   • If you have not installed the telemetry MCP yet:
       bash <(curl -fsSL https://raw.githubusercontent.com/neuraflash/nf-telemetry-installer/main/install.sh)
+  • Telemetry hooks (Claude Code) are wired but no-op until NF_TELEMETRY_URL
+    is exported in your shell profile, e.g.:
+      export NF_TELEMETRY_URL="https://telemetry.neuraflash.com"
 EOF
 }
 
