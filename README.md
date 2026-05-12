@@ -57,17 +57,24 @@ automatically — they are not installed per-machine.
 ## Telemetry coverage for third-party skills
 
 The installer wires two Claude Code hooks (`PreToolUse` / `PostToolUse`,
-matcher `Skill`) that POST `skill_start` / `skill_end` events to your
-telemetry collector for **every** skill invocation — first-party,
-third-party, anything. The hooks are no-ops until you export the collector
-URL:
+matcher `Skill`) that capture **every** skill invocation — first-party,
+third-party, anything. The Pre hook stashes start state keyed by Claude
+Code's `tool_use_id`; the Post hook reads it, computes duration, and POSTs
+one event (matching the `mcp-telemetry-emitter` wire format) to your
+collector with `source: "hook"` so the server can dedupe against events
+that the in-skill MCP path also emits.
+
+The hooks are no-ops until both env vars are exported — the same vars the
+telemetry MCP server reads, so a single shell profile entry covers both
+code paths:
 
 ```sh
-export NF_TELEMETRY_URL="https://telemetry.neuraflash.com"   # or wherever
+export TELEMETRY_ENDPOINT="<collector URL>"
+export TELEMETRY_TOKEN="<bearer token>"
 ```
 
-Add it to your shell profile (`~/.zshrc`, `~/.bashrc`) so it persists across
-sessions.
+If you've already run [`nf-telemetry-installer`](https://github.com/neuraflash/nf-telemetry-installer)
+these are typically set for you. If not, get them from the same source.
 
 **Claude Desktop has no hooks.** To track third-party skills uploaded to the
 Team-license skills console, wrap their `SKILL.md` first:

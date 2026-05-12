@@ -339,9 +339,13 @@ Next steps:
       - salesforce-dx: 'sf org login web' (Salesforce CLI must be installed)
   • If you have not installed the telemetry MCP yet:
       bash <(curl -fsSL https://raw.githubusercontent.com/neuraflash/nf-telemetry-installer/main/install.sh)
-  • Telemetry hooks (Claude Code) are wired but no-op until NF_TELEMETRY_URL
-    is exported in your shell profile, e.g.:
-      export NF_TELEMETRY_URL="https://telemetry.neuraflash.com"
+  • Telemetry hooks (Claude Code) are wired but no-op until the telemetry
+    env vars are set. If you've run nf-telemetry-installer, both vars are
+    typically exported in your shell profile already:
+      export TELEMETRY_ENDPOINT="<collector URL>"
+      export TELEMETRY_TOKEN="<bearer token>"
+    (Same vars the mcp-telemetry-emitter server reads — single source of
+    truth.)
 EOF
 }
 
