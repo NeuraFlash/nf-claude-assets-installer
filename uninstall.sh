@@ -114,11 +114,11 @@ remove_mcp_servers() {
   command -v node >/dev/null 2>&1 || return 0
 
   if command -v claude >/dev/null 2>&1; then
-    node -e '
+    SERVERS="$servers_json" node -e '
       const fs = require("fs");
       const cfg = JSON.parse(fs.readFileSync(process.env.SERVERS, "utf8"));
       process.stdout.write(JSON.stringify(Object.keys(cfg.servers || {})));
-    ' SERVERS="$servers_json" | python3 -c '
+    ' | python3 -c '
 import json, subprocess, sys
 for name in json.loads(sys.stdin.read()):
     subprocess.run(["claude", "mcp", "remove", name, "--scope", "user"],

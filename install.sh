@@ -211,7 +211,7 @@ install_mcp_servers() {
 
   # Code: use `claude mcp add` for each server marked claude_code.
   if command -v claude >/dev/null 2>&1; then
-    node -e '
+    SERVERS="$servers_json" node -e '
       const fs = require("fs");
       const cfg = JSON.parse(fs.readFileSync(process.env.SERVERS, "utf8"));
       const out = [];
@@ -220,7 +220,7 @@ install_mcp_servers() {
         out.push({ name, def });
       }
       process.stdout.write(JSON.stringify(out));
-    ' SERVERS="$servers_json" | python3 -c '
+    ' | python3 -c '
 import json, os, subprocess, sys
 for entry in json.loads(sys.stdin.read()):
     name, d = entry["name"], entry["def"]
